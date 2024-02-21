@@ -1,0 +1,12 @@
+# python virtual environment
+/.venv
+
+# output files
+/result.json
+/seinfeld.json
+
+# example torrent file
+/debian-12.5.0-amd64-netinst.iso.torrent
+
+# file for executing random python statements within the context of the development of this project
+/test.py

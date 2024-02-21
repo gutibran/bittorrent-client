@@ -4,6 +4,7 @@ import base64
 import sys
 from typing import Tuple, List, Union
 from pathlib import Path
+from pyfiglet import Figlet
 
 def read_bencoded_file(bencoded_file_path: str) -> Tuple[bytes, int]:
     """Open up and read a bencoded file. Return the data."""
@@ -82,12 +83,17 @@ def write_json(output_file_path: str, parsed_bencoded_data: dict) -> bool:
         output_file_path = Path(output_file_path).resolve()
 
         with open(output_file_path, "w") as json_file:
-            json.dump(parsed_bencoded_data, json_file)
+            json.dump(parsed_bencoded_data, json_file, indent=4, sort_keys=True)
         return True
     except Exception as e:
         print(f"Error writing JSON file: {e}")
         return False
 
+def print_text_header(figlet_font: str, text: str) -> bool:
+    figlet = Figlet(font=figlet_font)
+    print(figlet.renderText(text))
+    print("Created by Brandon Gutierrez")
+    print("Check out the source code at https://github.com/gutibran/bittorrent-client")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -99,6 +105,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output-file-path", type=str, help="The path to store the JSON output file.", required=True)
     parser.add_argument("-p", "--print-output", action="store_true", help="Print the output to the console.")
     args = parser.parse_args()
+    print_text_header("banner", "BitTorrent Client")
     bencoded_file, bencoded_file_size = read_bencoded_file(args.file_path)
     parsed_bencoded_file, _ = parse_bencoded(bencoded_file, 0)
     parsed_bencoded_file = convert_bytes_to_strings(parsed_bencoded_file)
