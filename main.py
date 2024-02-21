@@ -1,169 +1,108 @@
+import argparse
+import json
+import base64
 import sys
+from typing import Tuple, List, Union
 from pathlib import Path
-from typing import BinaryIO, Tuple
 
-"""Rewrite and refactor this shit tommorow."""
-
-def parse_integer(bencoded_file: BinaryIO, byte_index: int) -> tuple[int, int]:
-    """Parse a bencoded integer."""
-    bencoded_integer = ""
-    current_byte = bencoded_file.read(1)
-    current_character = current_byte.decode("utf-8")
-    while current_character.isdigit() and current_character != "e":
-        current_byte = bencoded_file.read(1)
-        byte_index += 1
-        current_character = current_byte.decode("utf-8")
-        bencoded_integer += current_character
-    return (int(bencoded_integer), byte_index)
-
-
-def parse_dictionary(bencoded_file: BinaryIO, byte_index: int) -> Tuple[dict, int]:
-    """Parse a bencoded dictionary."""
-    bencoded_dict = {}
-    current_byte = bencoded_file.read(1)
-    byte_index += 1
-
-    while current_byte.decode("utf-8") != "e":
-        try:
-            character = current_byte.decode("utf-8")
-        except UnicodeDecodeError:
-            character = current_byte.hex()
-
-        # Parse the key
-        if character.isdigit():
-            parsed_key, byte_index = parse_string(bencoded_file, byte_index)
-        else:
-            raise ValueError("Invalid key format in dictionary")
-
-        # Parse the value based on the next character
-        current_byte = bencoded_file.read(1)
-        byte_index += 1
-        try:
-            value_character = current_byte.decode("utf-8")
-        except UnicodeDecodeError:
-            value_character = current_byte.hex()
-
-        if value_character == "i":
-            # Parse an integer
-            parsed_value, byte_index = parse_integer(bencoded_file, byte_index)
-        elif value_character == "d":
-            # Parse a nested dictionary
-            parsed_value, byte_index = parse_dictionary(bencoded_file, byte_index)
-        elif value_character == "l":
-            # Parse a nested list
-            parsed_value, byte_index = parse_list(bencoded_file, byte_index)
-        elif value_character.isdigit():
-            # Parse a string
-            parsed_value, byte_index = parse_string(bencoded_file, byte_index)
-        else:
-            raise ValueError(f"Invalid value format in dictionary: {value_character}")
-
-        # Add the key-value pair to the dictionary
-        bencoded_dict[parsed_key] = parsed_value
-
-        # Read the next character (either a key or 'e' to close the dictionary)
-        current_byte = bencoded_file.read(1)
-        byte_index += 1
-
-    return (bencoded_dict, byte_index)
-
-
-def parse_list(bencoded_file: BinaryIO, byte_index: int) -> Tuple[list, int]:
-    """Parse a bencoded list."""
-    bencoded_list = []
-    current_byte = bencoded_file.read(1)
-    byte_index += 1
-
-    while current_byte.decode("utf-8") != "e":
-        try:
-            current_character = current_byte.decode("utf-8")
-        except UnicodeDecodeError:
-            current_character = current_byte.hex()
-
-        if current_character == "i":
-            # Parse an integer
-            parsed_integer, byte_index = parse_integer(bencoded_file, byte_index)
-            bencoded_list.append(parsed_integer)
-        elif current_character == "d":
-            # Parse a dictionary
-            parsed_dict, byte_index = parse_dictionary(bencoded_file, byte_index)
-            bencoded_list.append(parsed_dict)
-        elif current_character == "l":
-            # Parse a nested list
-            parsed_nested_list, byte_index = parse_list(bencoded_file, byte_index)
-            bencoded_list.append(parsed_nested_list)
-        elif current_character.isdigit():
-            # Parse a string
-            parsed_string, byte_index = parse_string(bencoded_file, byte_index)
-            bencoded_list.append(parsed_string)
-
-        # Read the next character
-        current_byte = bencoded_file.read(1)
-        byte_index += 1  # Add this line to update byte_index inside the loop
-
-    return (bencoded_list, byte_index)
-
-    return (bencoded_list, byte_index)
-
-
-def parse_string_length(bencoded_file: BinaryIO, byte_index: int) -> tuple[int, int]:
-    """Find the length of a bencoded string."""
-    bencoded_string_length = ""
-    current_byte = bencoded_file.read(1)
-    byte_index += 1
-    current_character = current_byte.decode("utf-8")
-    while current_character.isdigit() and current_character != ":":
-        bencoded_string_length += current_character
-        current_byte = bencoded_file.read(1)
-        byte_index += 1
-        current_character = current_byte.decode("utf-8")
-    # the current character is : at this point
-    return (int(bencoded_string_length), byte_index)
-
-
-def parse_string_characters(
-    bencoded_file: BinaryIO, byte_index: int, string_length: int
-) -> tuple[str, int]:
-    """Concatenate characters to form a string of n characters."""
-    bencoded_string = ""
-    for _ in range(string_length):
-        current_byte = bencoded_file.read(1)
-        byte_index += 1
-        current_character = current_byte.decode("utf-8")
-        bencoded_string += current_character
-    return (bencoded_string, byte_index)
-
-
-def parse_string(bencoded_file: BinaryIO, byte_index: int) -> Tuple[str, str, int]:
-    """Parse a single bencoded string. Returns the index of the end of the string."""
-    bencoded_string_key_length, byte_index = parse_string_length(
-        bencoded_file, byte_index
-    )
-    bencoded_string_key, byte_index = parse_string_characters(
-        bencoded_file, byte_index, bencoded_string_key_length
-    )
-    bencoded_string_value_length, byte_index = parse_string_length(
-        bencoded_file, byte_index
-    )
-    bencoded_string_value, byte_index = parse_string_characters(
-        bencoded_file, byte_index, bencoded_string_value_length
-    )
-    return (bencoded_string_key, bencoded_string_value, byte_index)
-
-
-def parse_bencoded_file(bencoded_file: str):
-    """Parse a bencoded file."""
-    bencoded_file_path = Path(bencoded_file).resolve()
-    bencoded_file_size = bencoded_file_path.stat().st_size
+def read_bencoded_file(bencoded_file_path: str) -> Tuple[bytes, int]:
+    """Open up and read a bencoded file. Return the data."""
+    bencoded_file_path = Path(bencoded_file_path).resolve()
     with open(bencoded_file_path, "rb") as bencoded_file:
-        current_byte_index = bencoded_file.tell()
-        current_byte = bencoded_file.read(1)
-        parsed_bencoded_data = {}
-        while current_byte_index != bencoded_file_size:
-            try:
-                character = current_byte.decode("utf-8")
-            except UnicodeDecodeError:
-                character = current_byte.hex()
+        return bencoded_file.read(), bencoded_file_path.stat().st_size
 
-            # parse teh bencode file
-            pass
+def parse_integer(data: bytes, start_index: int) -> Tuple[int, int]:
+    """Parse a bencoded integer. Return a tuple containing the parsed integer and the current byte position (index)."""
+    end_index = start_index + 1
+    while data[end_index] != ord('e'):
+        end_index += 1
+    integer_value = int(data[start_index+1:end_index])
+    return integer_value, end_index + 1
+
+def parse_string(data: bytes, start_index: int) -> Tuple[bytes, int]:
+    """Parse a bencoded string. Return a tuple containing the parsed string and the current byte position (index)."""
+    colon_index = data.find(b':', start_index)
+    length = int(data[start_index:colon_index].decode('utf-8'))
+    string_value = data[colon_index + 1:colon_index + 1 + length]
+    return string_value, colon_index + 1 + length
+
+
+def parse_list(data: bytes, start_index: int) -> Tuple[List[Union[int, str, list, dict]], int]:
+    """Parse a bencoded list. Return a tuple containing the parsed list and the current byte position (index)."""
+    result_list = []
+    index = start_index + 1
+    while data[index] != ord('e'):
+        value, index = parse_bencoded(data, index)
+        result_list.append(value)
+    return result_list, index + 1
+
+def parse_dictionary(data: bytes, start_index: int) -> Tuple[dict, int]:
+    result_dict = {}
+    index = start_index + 1
+    while data[index] != ord('e'):
+        key, index = parse_string(data, index)
+        value, index = parse_bencoded(data, index)
+
+        # Decode the key assuming it's utf-8 encoded
+        key_str = key.decode('utf-8')
+
+        # Special handling for "pieces" key
+        if key_str == "pieces" and isinstance(value, bytes):
+            result_dict[key_str] = base64.b64encode(value).decode('utf-8')
+        else:
+            result_dict[key_str] = value
+
+    return result_dict, index + 1
+
+
+def parse_bencoded(data: bytes, start_index: int) -> Tuple[Union[int, str, list, dict], int]:
+    """Parse a bencoded data. Return a tuple containing the parsed data and the current byte position (index)."""
+    if data[start_index] == ord('i'):
+        return parse_integer(data, start_index)
+    elif data[start_index] == ord('l'):
+        return parse_list(data, start_index)
+    elif data[start_index] == ord('d'):
+        return parse_dictionary(data, start_index)
+    elif data[start_index: start_index + 1].isdigit():
+        return parse_string(data, start_index)
+
+def convert_bytes_to_strings(data):
+    if isinstance(data, bytes):
+        return data.decode('utf-8')
+    elif isinstance(data, list):
+        return [convert_bytes_to_strings(item) for item in data]
+    elif isinstance(data, dict):
+        return {key: convert_bytes_to_strings(value) for key, value in data.items()}
+    else:
+        return data
+
+
+def write_json(output_file_path: str, parsed_bencoded_data: dict) -> bool:
+    try:
+        output_file_path = Path(output_file_path).resolve()
+
+        with open(output_file_path, "w") as json_file:
+            json.dump(parsed_bencoded_data, json_file)
+        return True
+    except Exception as e:
+        print(f"Error writing JSON file: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="bencode parser",
+        description="Parse bencoded file into JSON",
+        epilog="Text at the bottom of the help."
+    )
+    parser.add_argument("-f", "--file-path", type=str, help="The path to the bencoded file.", required=True)
+    parser.add_argument("-o", "--output-file-path", type=str, help="The path to store the JSON output file.", required=True)
+    parser.add_argument("-p", "--print-output", action="store_true", help="Print the output to the console.")
+    args = parser.parse_args()
+    bencoded_file, bencoded_file_size = read_bencoded_file(args.file_path)
+    parsed_bencoded_file, _ = parse_bencoded(bencoded_file, 0)
+    parsed_bencoded_file = convert_bytes_to_strings(parsed_bencoded_file)
+    write_json(args.output_file_path, parsed_bencoded_file)
+    if args.print_output == True:
+        print(parsed_bencoded_file) 
+    sys.exit(0)
